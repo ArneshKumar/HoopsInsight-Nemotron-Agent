@@ -116,74 +116,67 @@ TEAM REPORT:
 
 def predict_season_stats(player_name, games_played, games_remaining, mpg, ppg, rpg, apg, spg, bpg):
     memory = read_memory()
-    player_history = memory.get(player_name, "No previous scouting history available.")
+    player_history = memory.get(player_name, [])
+
+    history_text = str(player_history).lower()
+
+    modifier = 0.0
+
+    if any(word in history_text for word in ["fatigue", "exhausted", "slow", "conditioning", "injury", "limited"]):
+        modifier = -0.04
+    elif any(word in history_text for word in ["recovered", "strong", "elite", "improved", "efficient", "rhythm"]):
+        modifier = 0.03
+
+    projected_mpg = round(mpg * (1 + modifier), 1)
+    projected_ppg = round(ppg * (1 + modifier), 1)
+    projected_rpg = round(rpg * (1 + modifier / 2), 1)
+    projected_apg = round(apg * (1 + modifier / 2), 1)
+    projected_spg = round(spg, 1)
+    projected_bpg = round(bpg, 1)
 
     prompt = f"""
-You are HoopsInsight, an autonomous basketball stats projection agent.
+You are HoopsInsight. Explain this rest-of-season average prediction briefly.
 
 Player: {player_name}
-
-Current sample:
 Games played: {games_played}
 Games remaining: {games_remaining}
 
 Current averages:
-MPG: {mpg}
-PPG: {ppg}
-RPG: {rpg}
-APG: {apg}
-SPG: {spg}
-BPG: {bpg}
+MPG {mpg}, PPG {ppg}, RPG {rpg}, APG {apg}, SPG {spg}, BPG {bpg}
 
-Persistent scouting history for this player:
+Projected averages:
+MPG {projected_mpg}, PPG {projected_ppg}, RPG {projected_rpg}, APG {projected_apg}, SPG {projected_spg}, BPG {projected_bpg}
+
+Scouting memory:
 {player_history}
 
-Your task:
-Predict REST-OF-SEASON AVERAGES, not totals.
-
-Important:
-- Do NOT simply copy the current averages.
-- Adjust the projection using the scouting history.
-- If the scouting history mentions fatigue, injury risk, defensive slowdown, or poor conditioning, slightly lower MPG/PPG and explain why.
-- If the scouting history mentions recovery, strong rhythm, efficient shooting, or improved movement, slightly raise or stabilize the projection.
-- Keep projections realistic. Small changes are better than huge changes.
-
-Return ONLY valid JSON in this exact format:
-
+Return ONLY valid JSON:
 {{
-    "projected_mpg": number,
-    "projected_ppg": number,
-    "projected_rpg": number,
-    "projected_apg": number,
-    "projected_spg": number,
-    "projected_bpg": number,
-    "justification": "short explanation that references the scouting history",
-    "coaching_insight": "short coaching insight"
+  "justification": "short explanation",
+  "coaching_insight": "short coaching insight"
 }}
-
-Do not return markdown.
-Do not return code blocks.
-Do not leave fields empty.
 """
 
-    content = robust_api_call(prompt, temperature=0.35, max_tokens=800)
-
-    if not content:
-        raise ValueError("API server overloaded after 3 retries.")
-
     try:
-        return json.loads(content)
+        content = robust_api_call(prompt, temperature=0.1, max_tokens=250, max_retries=1)
+        explanation = json.loads(content)
     except Exception:
-        return {
-            "projected_mpg": round(mpg * 0.97, 1),
-            "projected_ppg": round(ppg * 0.97, 1),
-            "projected_rpg": round(rpg, 1),
-            "projected_apg": round(apg, 1),
-            "projected_spg": round(spg, 1),
-            "projected_bpg": round(bpg, 1),
-            "justification": "Model formatting failed. Applied conservative adjustment instead of copying baseline averages.",
-            "coaching_insight": "Use scouting memory to monitor whether performance trend improves or worsens."
+        explanation = {
+            "justification": "Projection uses current averages adjusted by persistent scouting memory.",
+            "coaching_insight": "Monitor whether the player trend continues over the next few games."
         }
+
+    return {
+        "projected_mpg": projected_mpg,
+        "projected_ppg": projected_ppg,
+        "projected_rpg": projected_rpg,
+        "projected_apg": projected_apg,
+        "projected_spg": projected_spg,
+        "projected_bpg": projected_bpg,
+        "justification": explanation["justification"],
+        "coaching_insight": explanation["coaching_insight"]
+    }
+
 
 
 def parse_agent_response(response):
@@ -233,17 +226,6 @@ with left:
     run_button = st.button("Run Autonomous Agent on All", use_container_width=True, type="primary")
 
     st.divider()
-    st.subheader("Quick Demo Inputs")
-
-    if st.button("Load Demo Scenario", use_container_width=True):
-        st.session_state.player_count = 3
-        st.session_state["pid_0"] = "Player_7"
-        st.session_state["obs_0"] = "Missed 6 straight shots, is slow getting back on defense, looks visibly exhausted."
-        st.session_state["pid_1"] = "Stephen_Curry"
-        st.session_state["obs_1"] = "Quick release still looks elite. Hit 4 consecutive threes in transition offense."
-        st.session_state["pid_2"] = "Nikola_Jokic"
-        st.session_state["obs_2"] = "Distributing the ball perfectly from the high post, but struggling to guard the pick and roll."
-        st.rerun()
 
 with right:
     st.subheader("Agent Output")
